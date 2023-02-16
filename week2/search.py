@@ -8,6 +8,7 @@ from flask import (
 from week2.opensearch import get_opensearch
 
 import week2.utilities.query_utils as qu
+import json
 
 bp = Blueprint('search', __name__, url_prefix='/search')
 
@@ -59,13 +60,30 @@ def process_filters(filters_input):
 def autocomplete():
     results = {}
     if request.method == 'GET':  # a query has been submitted
+        opensearch = get_opensearch()
         prefix = request.args.get("prefix")
         print(f"Prefix: {prefix}")
         if prefix is not None:
             type = request.args.get("type", "queries") # If type == queries, this is an autocomplete request, else if products, it's an instant search request.
+            index = None
+            if type == "queries":
+                index = "bbuy_queries"
+            else:
+                index = "bbuy_products"
             ##### W2, L3, S1
-            search_response = None
-            print("TODO: implement autocomplete AND instant search")
+            query_obj = {
+                "suggest": {
+                    "autocomplete": {
+                        "prefix": prefix,
+                        "completion": {
+                            "field": "suggest",
+                            "skip_duplicates": True
+                        }
+                    }
+                }
+            }
+
+            search_response =  opensearch.search(body=query_obj, index=index)
             if (search_response and search_response['suggest']['autocomplete'] and search_response['suggest']['autocomplete'][0]['length'] > 0): # just a query response
                 results = search_response['suggest']['autocomplete'][0]['options']
     print(f"Results: {results}")
@@ -108,7 +126,7 @@ def query():
         ##### W2, L1, S2
 
         ##### W2, L2, S2
-        print("Plain ol q: %s" % query_obj)
+        qu.add_spelling_suggestions(query_obj, user_query)
     elif request.method == 'GET':  # Handle the case where there is no query or just loading the page
         user_query = request.args.get("query", "*")
         filters_input = request.args.getlist("filter.name")
@@ -123,11 +141,12 @@ def query():
         #### W2, L1, S2
 
         ##### W2, L2, S2
+        qu.add_spelling_suggestions(query_obj, user_query)
 
     else:
         query_obj = qu.create_query("*", "", [], sort, sortDir, size=100)
 
-    #print("query obj: {}".format(query_obj))
+    print("Plain ol q: \n{}".format(json.dumps(query_obj)))
     response = opensearch.search(body=query_obj, index="bbuy_products", explain=explain)
     # Postprocess results here if you so desire
 
